@@ -1,5 +1,6 @@
 {
   "expo": {
+    "owner": "invictus_build",
     "name": "Schezwan Delight",
     "slug": "owner-app",
     "version": "1.0.0",
@@ -40,7 +41,8 @@
           "backgroundColor": "#FEFBEF",
           "imageWidth": 200
         }
-      ]
+      ],
+      "expo-build-properties"
     ]
   }
 }
