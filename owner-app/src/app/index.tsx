@@ -23,32 +23,52 @@ interface Order {
 }
 
 export default function Dashboard() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const router = useRouter();
 
   useEffect(() => {
-    // Listen for ACTIVE orders in real-time
-    const q = query(collection(db, 'orders'), where('status', '==', 'ACTIVE'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedOrders = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Order[];
-      setOrders(fetchedOrders);
+    // Listen for ACTIVE orders (Kitchen Feed)
+    const qActive = query(collection(db, 'orders'), where('status', '==', 'ACTIVE'));
+    const unsubActive = onSnapshot(qActive, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+      setActiveOrders(fetched);
+    });
+
+    // Listen for PENDING orders (Web QR Orders)
+    const qPending = query(collection(db, 'orders'), where('status', '==', 'PENDING'));
+    const unsubPending = onSnapshot(qPending, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+      setPendingOrders(fetched);
     });
     
-    return () => unsubscribe();
+    return () => {
+      unsubActive();
+      unsubPending();
+    };
   }, []);
+
+  const acceptOrder = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { status: 'ACTIVE' });
+    } catch (error) {
+      if (Platform.OS === 'web') window.alert("Error accepting order.");
+    }
+  };
+
+  const rejectOrder = async (orderId: string) => {
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+    } catch (error) {
+      if (Platform.OS === 'web') window.alert("Error rejecting order.");
+    }
+  };
 
   const closeBill = async (orderId: string) => {
     try {
       await updateDoc(doc(db, 'orders', orderId), { status: 'COMPLETED' });
     } catch (error) {
-      if (Platform.OS === 'web') {
-        window.alert("Error: Could not close bill.");
-      } else {
-        Alert.alert("Error", "Could not close bill.");
-      }
+      if (Platform.OS === 'web') window.alert("Error: Could not close bill.");
     }
   };
 
@@ -60,7 +80,7 @@ export default function Dashboard() {
       const newTotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
       
       if (items.length === 0) {
-        await deleteDoc(doc(db, 'orders', orderId)); // Delete order if empty
+        await deleteDoc(doc(db, 'orders', orderId));
       } else {
         await updateDoc(doc(db, 'orders', orderId), {
           items_json: JSON.stringify(items),
@@ -72,13 +92,52 @@ export default function Dashboard() {
     }
   };
 
+  const renderPendingSection = () => {
+    if (pendingOrders.length === 0) return null;
+
+    return (
+      <View style={styles.pendingContainer}>
+        <Text style={styles.pendingSectionTitle}>🚨 Pending Web Orders</Text>
+        {pendingOrders.map(item => {
+          let parsedItems: CartItem[] = [];
+          try { parsedItems = JSON.parse(item.items_json || '[]'); } catch (e) {}
+
+          return (
+            <View key={item.id} style={styles.pendingCard}>
+              <View style={styles.pendingHeader}>
+                <Text style={styles.pendingTableText}>📍 {item.table_id}</Text>
+                <Text style={styles.pendingTotalText}>₹{item.wave_total}</Text>
+              </View>
+
+              <View style={styles.itemsContainer}>
+                {parsedItems.map((food, index) => (
+                  <View key={index} style={styles.dishRow}>
+                    <Text style={styles.dishName}>
+                      <Text style={styles.dishQty}>{food.qty}x </Text>
+                      {food.name} {food.portion ? `(${food.portion})` : ''}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.rejectBtn} onPress={() => rejectOrder(item.id)}>
+                  <Text style={styles.actionBtnText}>✕ Reject</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.acceptBtn} onPress={() => acceptOrder(item.id)}>
+                  <Text style={styles.actionBtnText}>✓ Accept</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderOrder = ({ item }: { item: Order }) => {
     let parsedItems: CartItem[] = [];
-    try {
-      parsedItems = JSON.parse(item.items_json || '[]');
-    } catch (e) {
-      console.error("Error parsing items", e);
-    }
+    try { parsedItems = JSON.parse(item.items_json || '[]'); } catch (e) {}
 
     return (
       <View style={styles.orderCard}>
@@ -138,34 +197,30 @@ export default function Dashboard() {
       </View>
       
       <View style={styles.navStrip}>
-        <TouchableOpacity 
-          style={[styles.navBtn, { borderLeftColor: '#3b82f6' }]}
-          onPress={() => router.push('/pos')}
-        >
+        <TouchableOpacity style={[styles.navBtn, { borderLeftColor: '#3b82f6' }]} onPress={() => router.push('/pos')}>
           <Text style={styles.navBtnText}>🛒 Take Order</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity 
-          style={[styles.navBtn, { borderLeftColor: '#22c55e' }]}
-          onPress={() => router.push('/menu')}
-        >
+        <TouchableOpacity style={[styles.navBtn, { borderLeftColor: '#22c55e' }]} onPress={() => router.push('/menu')}>
           <Text style={styles.navBtnText}>📋 Menu</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity 
-          style={[styles.navBtn, { borderLeftColor: '#f59e0b' }]}
-          onPress={() => router.push('/analytics')}
-        >
+        <TouchableOpacity style={[styles.navBtn, { borderLeftColor: '#f59e0b' }]} onPress={() => router.push('/analytics')}>
           <Text style={styles.navBtnText}>📊 Analytics</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.feedContainer}>
-        <Text style={styles.feedTitle}>⚡ Live Kitchen Orders</Text>
         <FlatList
-          data={orders}
+          data={activeOrders}
           keyExtractor={item => item.id}
           renderItem={renderOrder}
+          ListHeaderComponent={
+            <>
+              {renderPendingSection()}
+              <Text style={styles.feedTitle}>⚡ Live Kitchen Orders</Text>
+            </>
+          }
           ListEmptyComponent={
             <View style={styles.centered}>
               <Text style={styles.emptyIcon}>🥢</Text>
@@ -180,17 +235,9 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FEFBEF', 
-    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0 
-  },
+  container: { flex: 1, backgroundColor: '#FEFBEF', paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0 },
   
-  header: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
-    paddingHorizontal: 16, paddingVertical: 15, backgroundColor: '#FEFBEF', 
-    borderBottomWidth: 1, borderBottomColor: '#f3f1e9',
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 15, backgroundColor: '#FEFBEF', borderBottomWidth: 1, borderBottomColor: '#f3f1e9' },
   brandTitle: { fontSize: 22, fontWeight: '900', color: '#1A0E00' },
   brandSubtitle: { fontSize: 11, fontWeight: '800', color: '#B82A2B', letterSpacing: 3 },
   liveBadge: { backgroundColor: 'rgba(34, 197, 94, 0.1)', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 12 },
@@ -201,8 +248,21 @@ const styles = StyleSheet.create({
   navBtnText: { fontSize: 12, fontWeight: '700', color: '#334155' },
 
   feedContainer: { flex: 1, paddingHorizontal: 14, paddingTop: 8, backgroundColor: '#fdfbf7' },
-  feedTitle: { fontSize: 17, fontWeight: '800', color: '#1A0E00', marginBottom: 12 },
+  feedTitle: { fontSize: 17, fontWeight: '800', color: '#1A0E00', marginBottom: 12, marginTop: 10 },
 
+  // PENDING SECTION STYLES
+  pendingContainer: { marginBottom: 15, marginTop: 5 },
+  pendingSectionTitle: { fontSize: 16, fontWeight: '900', color: '#d97706', marginBottom: 10 },
+  pendingCard: { backgroundColor: '#fffbeb', borderRadius: 12, marginBottom: 12, borderWidth: 2, borderColor: '#fcd34d', elevation: 3 },
+  pendingHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, backgroundColor: '#fef3c7', borderBottomWidth: 1, borderBottomColor: '#fde68a', borderTopLeftRadius: 10, borderTopRightRadius: 10 },
+  pendingTableText: { fontSize: 16, fontWeight: '900', color: '#b45309' },
+  pendingTotalText: { fontSize: 16, fontWeight: '900', color: '#d97706' },
+  actionRow: { flexDirection: 'row', gap: 10, padding: 12, borderTopWidth: 1, borderTopColor: '#fde68a' },
+  acceptBtn: { flex: 1, backgroundColor: '#22c55e', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  rejectBtn: { flex: 1, backgroundColor: '#ef4444', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  actionBtnText: { color: '#fff', fontWeight: '900', fontSize: 15 },
+
+  // ACTIVE SECTION STYLES
   orderCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#f1eee6', elevation: 2 },
   orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, backgroundColor: '#FCF9F2', borderBottomWidth: 1, borderBottomColor: '#f6f4ed' },
   tableIdText: { fontSize: 16, fontWeight: '900', color: '#1A0E00' },

@@ -37,12 +37,30 @@ export default function MenuManager() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched = snapshot.docs.map(doc => {
         const data = doc.data();
+        
+        // Python Script Fallback Logic
+        let resolvedFullPrice = 0;
+        if (data.price_full !== undefined && data.price_full !== null) {
+          resolvedFullPrice = Number(data.price_full);
+        } else if (data.price !== undefined && data.price !== null) {
+          resolvedFullPrice = Number(data.price);
+        } else if (data.fullPrice !== undefined && data.fullPrice !== null) {
+          resolvedFullPrice = Number(data.fullPrice);
+        }
+
+        let resolvedHalfPrice = undefined;
+        if (data.price_half !== undefined && data.price_half !== null && data.price_half !== "") {
+          resolvedHalfPrice = Number(data.price_half);
+        } else if (data.halfPrice !== undefined && data.halfPrice !== null && data.halfPrice !== "") {
+          resolvedHalfPrice = Number(data.halfPrice);
+        }
+
         return {
           id: doc.id,
           name: data.name || 'Unknown',
-          type: data.food_type?.toLowerCase() === 'veg' ? 'veg' : 'non-veg',
-          fullPrice: data.price_full ?? data.price ?? 0,
-          ...(typeof data.price_half === 'number' && { halfPrice: data.price_half }),
+          type: data.type === 'veg' || data.food_type?.toLowerCase() === 'veg' ? 'veg' : 'non-veg',
+          fullPrice: resolvedFullPrice,
+          ...(resolvedHalfPrice && { halfPrice: resolvedHalfPrice }),
           available: data.available !== false 
         };
       }) as MenuItem[];
@@ -115,7 +133,9 @@ export default function MenuManager() {
       const updates: any = {
         price: Number(editFullPrice),
         price_full: Number(editFullPrice),
-        price_half: editHalfPrice.trim() ? Number(editHalfPrice) : null
+        price_half: editHalfPrice.trim() ? Number(editHalfPrice) : null,
+        fullPrice: Number(editFullPrice),
+        halfPrice: editHalfPrice.trim() ? Number(editHalfPrice) : null
       };
 
       await updateDoc(doc(db, 'menu', item.id), updates);
@@ -190,7 +210,6 @@ export default function MenuManager() {
     );
   };
 
-  // Filter the menu list dynamically based on search query AND Veg/Non-Veg toggle
   const filteredMenu = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterType === 'all' || item.type === filterType;
@@ -264,35 +283,24 @@ export default function MenuManager() {
           </TouchableOpacity>
         </View>
 
-        {/* Current Menu Header with Inline Filter Toggle */}
         <View style={styles.listHeaderRow}>
           <Text style={styles.listHeaderTitle}>Current Menu ({filteredMenu.length})</Text>
           
           <View style={styles.filterGroup}>
-            <TouchableOpacity 
-              style={[styles.filterBtn, filterType === 'all' && styles.activeFilterBtn]} 
-              onPress={() => setFilterType('all')}
-            >
+            <TouchableOpacity style={[styles.filterBtn, filterType === 'all' && styles.activeFilterBtn]} onPress={() => setFilterType('all')}>
               <Text style={[styles.filterText, filterType === 'all' && styles.activeFilterText]}>All</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={[styles.filterBtn, filterType === 'veg' && styles.activeFilterVeg]} 
-              onPress={() => setFilterType('veg')}
-            >
+            <TouchableOpacity style={[styles.filterBtn, filterType === 'veg' && styles.activeFilterVeg]} onPress={() => setFilterType('veg')}>
               <Text style={[styles.filterText, filterType === 'veg' && styles.activeFilterTextWhite]}>Veg</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={[styles.filterBtn, filterType === 'non-veg' && styles.activeFilterNonVeg]} 
-              onPress={() => setFilterType('non-veg')}
-            >
+            <TouchableOpacity style={[styles.filterBtn, filterType === 'non-veg' && styles.activeFilterNonVeg]} onPress={() => setFilterType('non-veg')}>
               <Text style={[styles.filterText, filterType === 'non-veg' && styles.activeFilterTextWhite]}>Non-Veg</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Search Bar for Management */}
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput 
@@ -331,17 +339,11 @@ const styles = StyleSheet.create({
   backBtn: { paddingRight: 15 },
   backBtnText: { color: '#B82A2B', fontSize: 16, fontWeight: '800' },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#1A0E00' },
-  
   content: { flex: 1, paddingHorizontal: 16, paddingTop: 16, backgroundColor: '#fdfbf7' },
-
   formContainer: { backgroundColor: '#fff', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#f1eee6', elevation: 2, shadowOpacity: 0.05, shadowRadius: 2 },
   subHeader: { fontSize: 17, fontWeight: '800', color: '#1A0E00', marginBottom: 14 },
-  
-  // New Header Row containing Title and Filter
   listHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12, paddingHorizontal: 4 },
   listHeaderTitle: { fontSize: 17, fontWeight: '800', color: '#1A0E00' },
-  
-  // Filter Toggle Styling
   filterGroup: { flexDirection: 'row', backgroundColor: '#e2e8f0', borderRadius: 8, padding: 3 },
   filterBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
   activeFilterBtn: { backgroundColor: '#fff', elevation: 1 },
@@ -350,7 +352,6 @@ const styles = StyleSheet.create({
   filterText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
   activeFilterText: { color: '#1e293b' },
   activeFilterTextWhite: { color: '#fff' },
-  
   input: { backgroundColor: '#fcfaf5', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 12, fontSize: 15, color: '#1e293b' },
   row: { flexDirection: 'row', marginBottom: 12 },
   typeBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8, backgroundColor: '#f1f5f9', marginHorizontal: 4 },
@@ -358,17 +359,13 @@ const styles = StyleSheet.create({
   activeNonVeg: { backgroundColor: '#B82A2B' },
   typeText: { fontWeight: '700', color: '#64748b' },
   activeText: { color: '#fff' },
-  
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingHorizontal: 4 },
   switchLabel: { fontSize: 15, fontWeight: '700', color: '#334155' },
-  
   addBtn: { backgroundColor: '#1A0E00', paddingVertical: 14, borderRadius: 10, alignItems: 'center', marginTop: 4 },
   addBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 16, paddingHorizontal: 12 },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#1e293b' },
-  
   dishCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 12, alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#f1eee6', borderLeftWidth: 4, borderLeftColor: '#B82A2B', elevation: 1 },
   dishCardDisabled: { backgroundColor: '#fcfaf5', borderLeftColor: '#cbd5e1', opacity: 0.8 },
   dishInfo: { flex: 1, paddingRight: 10 },
@@ -376,16 +373,13 @@ const styles = StyleSheet.create({
   dishNameDisabled: { textDecorationLine: 'line-through', color: '#94a3b8' },
   outOfStockText: { fontSize: 12, color: '#ef4444', fontStyle: 'italic', fontWeight: '600' },
   dishPrices: { fontSize: 14, color: '#64748b', fontWeight: '700' },
-  
   dishActionRow: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 8, marginLeft: 10 },
   iconBtnRed: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 8, marginLeft: 10 },
   iconBtnGreen: { padding: 8, backgroundColor: '#dcfce3', borderRadius: 8, marginLeft: 10 },
   iconBtnText: { fontSize: 14 },
-  
   editPriceRow: { flexDirection: 'row', marginTop: 8 },
   editInput: { flex: 1, marginBottom: 0, paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, fontSize: 14 },
-  
   emptyContainer: { alignItems: 'center', marginTop: 30 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { color: '#94a3b8', fontSize: 15, fontWeight: '600' }
